@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MusicApp - Gestor de Música</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-music"></i> Music<span>App</span></h1>
+            <div id="status-indicator">Conectando a la API...</div>
+        </header>
+
+        <div class="main-content">
+            <section class="add-song">
+                <h2 class="form-title">Agregar Nueva Canción</h2>
+                <form id="song-form">
+                    <div class="form-group">
+                        <label for="nombre">Nombre de la canción*</label>
+                        <input type="text" id="nombre" name="nombre" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="artistas">Artistas* (separados por comas)</label>
+                        <input type="text" id="artistas" name="artistas" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="fecha">Fecha de lanzamiento*</label>
+                        <input type="date" id="fecha" name="fecha" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="album">Álbum</label>
+                        <input type="text" id="album" name="album">
+                    </div>
+                    <div class="form-group">
+                        <label for="caratula">Carátula</label>
+                        <input type="file" id="caratula" name="caratula" accept="image/*">
+                    </div>
+                    <button type="submit">Agregar Canción</button>
+                </form>
+            </section>
+
+            <section class="song-list">
+                <div class="song-list-header">
+                    <h2 class="section-title">Mis Canciones</h2>
+                    <div class="search-bar">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="search" placeholder="Buscar canciones...">
+                    </div>
+                </div>
+                <div class="songs-container" id="songs-container">
+                    <!-- Las canciones se cargarán dinámicamente aquí -->
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- Modal para editar canción -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Editar Canción</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="edit-form">
+                <input type="hidden" id="edit-id">
+                <div class="form-group">
+                    <label for="edit-nombre">Nombre de la canción*</label>
+                    <input type="text" id="edit-nombre" name="nombre" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-artistas">Artistas* (separados por comas)</label>
+                    <input type="text" id="edit-artistas" name="artistas" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-fecha">Fecha de lanzamiento*</label>
+                    <input type="date" id="edit-fecha" name="fecha" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-album">Álbum</label>
+                    <input type="text" id="edit-album" name="album">
+                </div>
+                <div class="form-group">
+                    <label for="edit-caratula">Carátula</label>
+                    <input type="file" id="edit-caratula" name="caratula" accept="image/*">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="cancel-btn" id="cancel-edit">Cancelar</button>
+                    <button type="submit">Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal para confirmar eliminación -->
+    <div id="delete-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Eliminar Canción</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <p>¿Estás seguro de que deseas eliminar esta canción?</p>
+            <p id="delete-song-name" style="font-weight: bold; margin-top: 10px;"></p>
+            <input type="hidden" id="delete-id">
+            <div class="modal-actions">
+                <button class="cancel-btn" id="cancel-delete">Cancelar</button>
+                <button id="confirm-delete" style="background-color: #ff5252;">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script>
+        const API_URL = '/api/postgres/canciones';
+        
+        const songForm = document.getElementById('song-form');
+        const songsContainer = document.getElementById('songs-container');
+        const editModal = document.getElementById('edit-modal');
+        const deleteModal = document.getElementById('delete-modal');
+        const editForm = document.getElementById('edit-form');
+        const searchInput = document.getElementById('search');
+        const statusIndicator = document.getElementById('status-indicator');
+        const notification = document.getElementById('notification');
+
+        async function checkApiStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                if (data.status === 'OK') {
+                    statusIndicator.textContent = 'API conectada';
+                    statusIndicator.style.color = 'var(--color-primary)';
+                    loadSongs();
+                } else {
+                    statusIndicator.textContent = 'Error en la API';
+                    statusIndicator.style.color = '#ff5252';
+                }
+            } catch (error) {
+                statusIndicator.textContent = 'API no disponible';
+                statusIndicator.style.color = '#ff5252';
+                console.error('Error al verificar el estado de la API:', error);
+            }
+        }
+
+        async function loadSongs() {
+            try {
+                const response = await fetch(API_URL);
+                const songs = await response.json();
+                
+                renderSongs(songs);
+            } catch (error) {
+                showNotification('Error al cargar las canciones', 'error');
+                console.error('Error al cargar canciones:', error);
+            }
+        }
+
+        function renderSongs(songs) {
+            songsContainer.innerHTML = '';
+            
+            if (songs.length === 0) {
+                songsContainer.innerHTML = '<p class="no-songs" style="padding: 20px; text-align: center;">No hay canciones disponibles</p>';
+                return;
+            }
+            
+            songs.forEach(song => {
+                const date = new Date(song.fecha);
+                const formattedDate = date.toLocaleDateString('es-ES');
+                
+                const coverUrl = song.caratula ? song.caratula : 'https://via.placeholder.com/80';
+                
+                const songElement = document.createElement('div');
+                songElement.className = 'song-card';
+                songElement.innerHTML = `
+                    <div class="song-cover">
+                        <img src="${coverUrl}" alt="${song.nombre}">
+                    </div>
+                    <div class="song-details">
+                        <div class="song-title">${song.nombre}</div>
+                        <div class="song-artist">${Array.isArray(song.artistas) ? song.artistas.join(', ') : song.artistas}</div>
+                        <div class="song-album">${song.album || 'Single'}</div>
+                        <div class="song-date">${formattedDate}</div>
+                    </div>
+                    <div class="song-actions">
+                        <button class="action-btn edit-btn" data-id="${song.id}">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="action-btn delete-btn" data-id="${song.id}" data-name="${song.nombre}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                
+                songsContainer.appendChild(songElement);
+            });
+            
+            document.querySelectorAll('.edit-btn').forEach(btn => {
+                btn.addEventListener('click', () => openEditModal(btn.dataset.id));
+            });
+            
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', () => openDeleteModal(btn.dataset.id, btn.dataset.name));
+            });
+        }
+
+        songForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(songForm);
+            
+            const artistasInput = formData.get('artistas');
+            const artistasArray = artistasInput.split(',').map(artista => artista.trim());
+            formData.delete('artistas');
+            formData.append('artistas', JSON.stringify(artistasArray));
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    showNotification('Canción agregada correctamente');
+                    songForm.reset();
+                    loadSongs();
+                } else {
+                    const error = await response.json();
+                    showNotification(`Error: ${error.error || 'No se pudo agregar la canción'}`, 'error');
+                }
+            } catch (error) {
+                showNotification('Error al comunicarse con el servidor', 'error');
+                console.error('Error:', error);
+            }
+        });
+
+        async function openEditModal(id) {
+            try {
+                const response = await fetch(`${API_URL}/${id}`);
+                const song = await response.json();
+                
+                document.getElementById('edit-id').value = song.id;
+                document.getElementById('edit-nombre').value = song.nombre;
+                document.getElementById('edit-artistas').value = Array.isArray(song.artistas) ? song.artistas.join(', ') : song.artistas;
+                document.getElementById('edit-fecha').value = song.fecha;
+                document.getElementById('edit-album').value = song.album || '';
+                
+                editModal.style.display = 'flex';
+            } catch (error) {
+                showNotification('Error al cargar datos de la canción', 'error');
+                console.error('Error:', error);
+            }
+        }
+
+        function openDeleteModal(id, name) {
+            document.getElementById('delete-id').value = id;
+            document.getElementById('delete-song-name').textContent = name;
+            deleteModal.style.display = 'flex';
+        }
+
+        editForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const id = document.getElementById('edit-id').value;
+            const formData = new FormData(editForm);
+            
+            // Convertir los artistas a un array
+            const artistasInput = formData.get('artistas');
+            const artistasArray = artistasInput.split(',').map(artista => artista.trim());
+            formData.delete('artistas');
+            formData.append('artistas', JSON.stringify(artistasArray));
+            
+            try {
+                const response = await fetch(`${API_URL}/${id}`, {
+                    method: 'PUT',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    showNotification('Canción actualizada correctamente');
+                    editModal.style.display = 'none';
+                    loadSongs();
+                } else {
+                    const error = await response.json();
+                    showNotification(`Error: ${error.error || 'No se pudo actualizar la canción'}`, 'error');
+                }
+            } catch (error) {
+                showNotification('Error al comunicarse con el servidor', 'error');
+                console.error('Error:', error);
+            }
+        });
+
+        document.getElementById('confirm-delete').addEventListener('click', async () => {
+            const id = document.getElementById('delete-id').value;
+            
+            try {
+                const response = await fetch(`${API_URL}/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    showNotification('Canción eliminada correctamente');
+                    deleteModal.style.display = 'none';
+                    loadSongs();
+                } else {
+                    const error = await response.json();
+                    showNotification(`Error: ${error.error || 'No se pudo eliminar la canción'}`, 'error');
+                }
+            } catch (error) {
+                showNotification('Error al comunicarse con el servidor', 'error');
+                console.error('Error:', error);
+            }
+        });
+
+        searchInput.addEventListener('input', async () => {
+            const searchTerm = searchInput.value.toLowerCase();
+            
+            try {
+                const response = await fetch(API_URL);
+                const songs = await response.json();
+                
+                const filteredSongs = songs.filter(song => 
+                    song.nombre.toLowerCase().includes(searchTerm) ||
+                    (Array.isArray(song.artistas) ? song.artistas.join(' ').toLowerCase().includes(searchTerm) : song.artistas.toLowerCase().includes(searchTerm)) ||
+                    (song.album && song.album.toLowerCase().includes(searchTerm))
+                );
+                
+                renderSongs(filteredSongs);
+            } catch (error) {
+                console.error('Error en la búsqueda:', error);
+            }
+        });
+
+        document.querySelectorAll('.close-modal, #cancel-edit, #cancel-delete').forEach(element => {
+            element.addEventListener('click', () => {
+                editModal.style.display = 'none';
+                deleteModal.style.display = 'none';
+            });
+        });
+
+        function showNotification(message, type = 'success') {
+            notification.textContent = message;
+            notification.style.backgroundColor = type === 'success' ? 'var(--color-primary)' : '#ff5252';
+            notification.style.display = 'block';
+            
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+
+        checkApiStatus();
+    </script>
+</body>
+</html>
